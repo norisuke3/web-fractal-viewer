@@ -2,8 +2,10 @@
 import { onMounted, ref } from 'vue';
 
 const canvasRef = ref(null);
+const offscreenCanvasRef = ref(null);
 const width = 800;
 const height = 600;
+
 // 反復回数を動的に計算
 function calculateMaxIterations() {
   const zoom = calculateZoom();
@@ -58,7 +60,7 @@ function handleMouseMove(e) {
   const y = e.clientY - rect.top;
 
   selectionEnd.value = { x, y };
-  drawMandelbrot();
+  updateSelectionDisplay();
 }
 
 function handleMouseUp() {
@@ -96,9 +98,30 @@ function handleMouseUp() {
   drawMandelbrot();
 }
 
-function drawMandelbrot() {
+// キャッシュされた画像を使用して選択範囲のみを更新
+function updateSelectionDisplay() {
   const canvas = canvasRef.value;
   const ctx = canvas.getContext('2d');
+  
+  // キャッシュされた画像を描画
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(offscreenCanvasRef.value, 0, 0);
+
+  // 選択範囲を描画
+  if (isSelecting.value) {
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    const x = Math.min(selectionStart.value.x, selectionEnd.value.x);
+    const y = Math.min(selectionStart.value.y, selectionEnd.value.y);
+    const w = Math.abs(selectionEnd.value.x - selectionStart.value.x);
+    const h = Math.abs(selectionEnd.value.y - selectionStart.value.y);
+    ctx.strokeRect(x, y, w, h);
+  }
+}
+
+function drawMandelbrot() {
+  // オフスクリーンキャンバスに描画
+  const ctx = offscreenCanvasRef.value.getContext('2d');
   const imageData = ctx.createImageData(width, height);
 
   for (let x = 0; x < width; x++) {
@@ -142,17 +165,9 @@ function drawMandelbrot() {
   }
 
   ctx.putImageData(imageData, 0, 0);
-
-  // 選択範囲を描画
-  if (isSelecting.value) {
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    const x = Math.min(selectionStart.value.x, selectionEnd.value.x);
-    const y = Math.min(selectionStart.value.y, selectionEnd.value.y);
-    const w = Math.abs(selectionEnd.value.x - selectionStart.value.x);
-    const h = Math.abs(selectionEnd.value.y - selectionStart.value.y);
-    ctx.strokeRect(x, y, w, h);
-  }
+  
+  // メインキャンバスに描画を反映
+  updateSelectionDisplay();
 }
 
 // Helper function to convert HSL to RGB
@@ -183,6 +198,11 @@ function hslToRgb(h, s, l) {
 }
 
 onMounted(() => {
+  // オフスクリーンキャンバスの初期化
+  offscreenCanvasRef.value = document.createElement('canvas');
+  offscreenCanvasRef.value.width = width;
+  offscreenCanvasRef.value.height = height;
+  
   drawMandelbrot();
 });
 </script>

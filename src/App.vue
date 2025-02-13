@@ -12,6 +12,27 @@ function calculateMaxIterations() {
   return Math.min(2000, Math.floor(100 + zoom * 25));
 }
 
+// マンデルブロー集合の反復計算
+function calculateMandelbrotIterations(initialA, initialB, maxIterations) {
+  let a = initialA;
+  let b = initialB;
+  const ca = initialA;
+  const cb = initialB;
+  let n = 0;
+
+  for (n = 0; n < maxIterations; n++) {
+    const aa = a * a - b * b;
+    const bb = 2 * a * b;
+
+    a = aa + ca;
+    b = bb + cb;
+
+    if (a * a + b * b > 4) break;
+  }
+
+  return n;
+}
+
 // 選択範囲の状態
 const isSelecting = ref(false);
 const selectionStart = ref({ x: 0, y: 0 });
@@ -123,34 +144,20 @@ function drawMandelbrot() {
   // オフスクリーンキャンバスに描画
   const ctx = offscreenCanvasRef.value.getContext('2d');
   const imageData = ctx.createImageData(width, height);
+  const iterations = calculateMaxIterations();
 
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
       // Map canvas coordinates to current viewport
-      let a =
+      const a =
         viewPort.value.xMin +
         (x / width) * (viewPort.value.xMax - viewPort.value.xMin);
-      let b =
+      const b =
         viewPort.value.yMin +
         (y / height) * (viewPort.value.yMax - viewPort.value.yMin);
 
-      const ca = a;
-      const cb = b;
-      let n = 0;
-
-      // ズームレベルに応じて反復回数を調整
-      const iterations = calculateMaxIterations();
-
-      // Calculate if point is in Mandelbrot set
-      for (n = 0; n < iterations; n++) {
-        const aa = a * a - b * b;
-        const bb = 2 * a * b;
-
-        a = aa + ca;
-        b = bb + cb;
-
-        if (a * a + b * b > 4) break;
-      }
+      // 反復計算を実行
+      const n = calculateMandelbrotIterations(a, b, iterations);
 
       // Color the pixel based on iteration count
       const pixelIndex = (y * width + x) * 4;

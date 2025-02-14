@@ -13,24 +13,44 @@ function calculateMaxIterations() {
 }
 
 // マンデルブロー集合の反復計算
-function calculateMandelbrotIterations(initialA, initialB, maxIterations) {
-  let a = initialA;
-  let b = initialB;
-  const ca = initialA;
-  const cb = initialB;
-  let n = 0;
+function calculateMandelbrotIterations(width, height, viewPort, maxIterations) {
+  const imageData = new ImageData(width, height);
 
-  for (n = 0; n < maxIterations; n++) {
-    const aa = a * a - b * b;
-    const bb = 2 * a * b;
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      // キャンバス座標を現在のビューポートにマッピング
+      const initialA = viewPort.xMin + (x / width) * (viewPort.xMax - viewPort.xMin);
+      const initialB = viewPort.yMin + (y / height) * (viewPort.yMax - viewPort.yMin);
 
-    a = aa + ca;
-    b = bb + cb;
+      let a = initialA;
+      let b = initialB;
+      const ca = initialA;
+      const cb = initialB;
+      let n = 0;
 
-    if (a * a + b * b > 4) break;
+      for (n = 0; n < maxIterations; n++) {
+        const aa = a * a - b * b;
+        const bb = 2 * a * b;
+
+        a = aa + ca;
+        b = bb + cb;
+
+        if (a * a + b * b > 4) break;
+      }
+
+      // 反復回数に基づいてピクセルに色を設定
+      const pixelIndex = (y * width + x) * 4;
+      const hue = n === maxIterations ? 0 : n % 360;
+      const [r, g, bl] = hslToRgb(hue / 360, 1, n === maxIterations ? 0 : 0.5);
+
+      imageData.data[pixelIndex] = r;
+      imageData.data[pixelIndex + 1] = g;
+      imageData.data[pixelIndex + 2] = bl;
+      imageData.data[pixelIndex + 3] = 255;
+    }
   }
 
-  return n;
+  return imageData;
 }
 
 // 選択範囲の状態
@@ -143,34 +163,8 @@ function updateSelectionDisplay() {
 function drawMandelbrot() {
   // オフスクリーンキャンバスに描画
   const ctx = offscreenCanvasRef.value.getContext('2d');
-  const imageData = ctx.createImageData(width, height);
   const iterations = calculateMaxIterations();
-
-  for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
-      // Map canvas coordinates to current viewport
-      const a =
-        viewPort.value.xMin +
-        (x / width) * (viewPort.value.xMax - viewPort.value.xMin);
-      const b =
-        viewPort.value.yMin +
-        (y / height) * (viewPort.value.yMax - viewPort.value.yMin);
-
-      // 反復計算を実行
-      const n = calculateMandelbrotIterations(a, b, iterations);
-
-      // Color the pixel based on iteration count
-      const pixelIndex = (y * width + x) * 4;
-      const hue = n === iterations ? 0 : n % 360;
-      const [r, g, bl] = hslToRgb(hue / 360, 1, n === iterations ? 0 : 0.5);
-
-      imageData.data[pixelIndex] = r;
-      imageData.data[pixelIndex + 1] = g;
-      imageData.data[pixelIndex + 2] = bl;
-      imageData.data[pixelIndex + 3] = 255;
-    }
-  }
-
+  const imageData = calculateMandelbrotIterations(width, height, viewPort.value, iterations);
   ctx.putImageData(imageData, 0, 0);
   
   // メインキャンバスに描画を反映

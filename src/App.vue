@@ -23,12 +23,12 @@ const height = 600;
 // 反復回数を動的に計算
 function calculateMaxIterations() {
   const zoom = calculateZoom();
-  return Math.min(2000, Math.floor(100 + zoom * 25));
+  return Math.min(4000, Math.floor(100 + zoom * 25));
 }
 
 // マンデルブロー集合の反復計算
 function calculateMandelbrotIterations(width, height, viewPort, maxIterations) {
-  const array = calculateMandelbrotIterationsWasm(width, height, viewPort, maxIterations, 1);
+  const array = calculateMandelbrotIterationsWasm(width, height, viewPort, maxIterations, 10);
   return new ImageData(new Uint8ClampedArray(array.buffer), width, height);
 }
 

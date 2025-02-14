@@ -13,6 +13,7 @@ func calculateMandelbrotIterations(this js.Value, args []js.Value) interface{} {
 	height := args[1].Int()
 	viewPort := args[2]
 	maxIterations := args[3].Int()
+	thCount := args[4].Int() // 新しいパラメータ（現時点では使用しない）
 
 	// バッファの初期化（必要な場合のみ）
 	bufferSize := width * height * 4

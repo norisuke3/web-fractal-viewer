@@ -28,7 +28,7 @@ function calculateMaxIterations() {
 
 // マンデルブロー集合の反復計算
 function calculateMandelbrotIterations(width, height, viewPort, maxIterations) {
-  const array = calculateMandelbrotIterationsWasm(width, height, viewPort, maxIterations);
+  const array = calculateMandelbrotIterationsWasm(width, height, viewPort, maxIterations, 1);
   return new ImageData(new Uint8ClampedArray(array.buffer), width, height);
 }
 

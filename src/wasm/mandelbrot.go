@@ -1,19 +1,33 @@
 package main
 
 import (
+	"sync"
 	"syscall/js"
-	"unsafe"
 )
 
 // 計算用の一時バッファ
 var buffer []uint8
+
+// ワーカータスクの定義
+type task struct {
+	startY, endY int
+}
+
+// ワーカーの結果
+type result struct {
+	done bool
+}
 
 func calculateMandelbrotIterations(this js.Value, args []js.Value) interface{} {
 	width := args[0].Int()
 	height := args[1].Int()
 	viewPort := args[2]
 	maxIterations := args[3].Int()
-	thCount := args[4].Int() // 新しいパラメータ（現時点では使用しない）
+	thCount := args[4].Int()
+
+	if thCount < 1 {
+		thCount = 1
+	}
 
 	// バッファの初期化（必要な場合のみ）
 	bufferSize := width * height * 4
@@ -30,47 +44,90 @@ func calculateMandelbrotIterations(this js.Value, args []js.Value) interface{} {
 	// 事前計算
 	xScale := (xMax - xMin) / float64(width)
 	yScale := (yMax - yMin) / float64(height)
-	
-	// 行ごとの処理
-	for y := 0; y < height; y++ {
-		// y座標の事前計算
-		initialB := yMin + float64(y)*yScale
-		rowOffset := y * width * 4
 
-		// x方向の処理
-		for x := 0; x < width; x++ {
-			initialA := xMin + float64(x)*xScale
+	// タスクチャネルとワーカーの準備
+	tasks := make(chan task, height)
+	results := make(chan result, height)
+	var wg sync.WaitGroup
 
-			// マンデルブロー集合の計算
-			var n int
-			a, b := initialA, initialB
-			aa, bb := a*a, b*b
+	// ワーカー関数
+	worker := func() {
+		defer wg.Done()
+		for t := range tasks {
+			for y := t.startY; y < t.endY; y++ {
+				// y座標の事前計算
+				initialB := yMin + float64(y)*yScale
+				rowOffset := y * width * 4
 
-			// メインループの最適化
-			for n = 0; n < maxIterations && aa+bb <= 4; n++ {
-				b = 2*a*b + initialB
-				a = aa - bb + initialA
-				aa = a * a
-				bb = b * b
+				// x方向の処理
+				for x := 0; x < width; x++ {
+					initialA := xMin + float64(x)*xScale
+
+					// マンデルブロー集合の計算
+					var n int
+					a, b := initialA, initialB
+					aa, bb := a*a, b*b
+
+					// メインループの最適化
+					for n = 0; n < maxIterations && aa+bb <= 4; n++ {
+						b = 2*a*b + initialB
+						a = aa - bb + initialA
+						aa = a * a
+						bb = b * b
+					}
+
+					// ピクセルインデックスの計算
+					pixelIndex := rowOffset + x*4
+
+					// 色の計算と設定
+					if n == maxIterations {
+						buffer[pixelIndex] = 0
+						buffer[pixelIndex+1] = 0
+						buffer[pixelIndex+2] = 0
+					} else {
+						hue := float64(n%360) / 360.0
+						r, g, bl := hslToRgb(hue, 1.0, 0.5)
+						buffer[pixelIndex] = r
+						buffer[pixelIndex+1] = g
+						buffer[pixelIndex+2] = bl
+					}
+					buffer[pixelIndex+3] = 255
+				}
 			}
-
-			// ピクセルインデックスの計算
-			pixelIndex := rowOffset + x*4
-
-			// 色の計算と設定
-			if n == maxIterations {
-				buffer[pixelIndex] = 0
-				buffer[pixelIndex+1] = 0
-				buffer[pixelIndex+2] = 0
-			} else {
-				hue := float64(n%360) / 360.0
-				r, g, bl := hslToRgb(hue, 1.0, 0.5)
-				buffer[pixelIndex] = r
-				buffer[pixelIndex+1] = g
-				buffer[pixelIndex+2] = bl
-			}
-			buffer[pixelIndex+3] = 255
+			results <- result{done: true}
 		}
+	}
+
+	// ワーカーの起動
+	wg.Add(thCount)
+	for i := 0; i < thCount; i++ {
+		go worker()
+	}
+
+	// タスクの分配
+	rowsPerTask := height / thCount
+	if rowsPerTask < 1 {
+		rowsPerTask = 1
+	}
+
+	for startY := 0; startY < height; startY += rowsPerTask {
+		endY := startY + rowsPerTask
+		if endY > height {
+			endY = height
+		}
+		tasks <- task{startY: startY, endY: endY}
+	}
+	close(tasks)
+
+	// 全ての結果を待機
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// 結果の収集
+	for range results {
+		// 結果を受け取るだけ
 	}
 
 	// バッファをJavaScriptのUint8Arrayに転送

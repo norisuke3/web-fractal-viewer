@@ -2,7 +2,11 @@ package main
 
 import (
 	"syscall/js"
+	"unsafe"
 )
+
+// 計算用の一時バッファ
+var buffer []uint8
 
 func calculateMandelbrotIterations(this js.Value, args []js.Value) interface{} {
 	width := args[0].Int()
@@ -10,56 +14,68 @@ func calculateMandelbrotIterations(this js.Value, args []js.Value) interface{} {
 	viewPort := args[2]
 	maxIterations := args[3].Int()
 
-	// JavaScriptのUint8ClampedArrayを作成
-	array := js.Global().Get("Uint8Array").New(width * height * 4)
+	// バッファの初期化（必要な場合のみ）
+	bufferSize := width * height * 4
+	if buffer == nil || len(buffer) < bufferSize {
+		buffer = make([]uint8, bufferSize)
+	}
 
+	// ビューポートのパラメータを一度だけ取得
 	xMin := viewPort.Get("xMin").Float()
 	xMax := viewPort.Get("xMax").Float()
 	yMin := viewPort.Get("yMin").Float()
 	yMax := viewPort.Get("yMax").Float()
 
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
-			// キャンバス座標を現在のビューポートにマッピング
-			initialA := xMin + (float64(x)/float64(width))*(xMax-xMin)
-			initialB := yMin + (float64(y)/float64(height))*(yMax-yMin)
+	// 事前計算
+	xScale := (xMax - xMin) / float64(width)
+	yScale := (yMax - yMin) / float64(height)
+	
+	// 行ごとの処理
+	for y := 0; y < height; y++ {
+		// y座標の事前計算
+		initialB := yMin + float64(y)*yScale
+		rowOffset := y * width * 4
 
-			a := initialA
-			b := initialB
-			ca := initialA
-			cb := initialB
+		// x方向の処理
+		for x := 0; x < width; x++ {
+			initialA := xMin + float64(x)*xScale
+
+			// マンデルブロー集合の計算
 			var n int
+			a, b := initialA, initialB
+			aa, bb := a*a, b*b
 
-			for n = 0; n < maxIterations; n++ {
-				aa := a*a - b*b
-				bb := 2 * a * b
-
-				a = aa + ca
-				b = bb + cb
-
-				if a*a+b*b > 4 {
-					break
-				}
+			// メインループの最適化
+			for n = 0; n < maxIterations && aa+bb <= 4; n++ {
+				b = 2*a*b + initialB
+				a = aa - bb + initialA
+				aa = a * a
+				bb = b * b
 			}
 
-			// 反復回数に基づいてピクセルに色を設定
-			pixelIndex := (y*width + x) * 4
-			var r, g, bl uint8
+			// ピクセルインデックスの計算
+			pixelIndex := rowOffset + x*4
 
+			// 色の計算と設定
 			if n == maxIterations {
-				r, g, bl = 0, 0, 0
+				buffer[pixelIndex] = 0
+				buffer[pixelIndex+1] = 0
+				buffer[pixelIndex+2] = 0
 			} else {
 				hue := float64(n%360) / 360.0
-				r, g, bl = hslToRgb(hue, 1.0, 0.5)
+				r, g, bl := hslToRgb(hue, 1.0, 0.5)
+				buffer[pixelIndex] = r
+				buffer[pixelIndex+1] = g
+				buffer[pixelIndex+2] = bl
 			}
-
-			array.SetIndex(pixelIndex, r)
-			array.SetIndex(pixelIndex+1, g)
-			array.SetIndex(pixelIndex+2, bl)
-			array.SetIndex(pixelIndex+3, 255)
+			buffer[pixelIndex+3] = 255
 		}
 	}
 
+	// バッファをJavaScriptのUint8Arrayに転送
+	array := js.Global().Get("Uint8Array").New(bufferSize)
+	js.CopyBytesToJS(array, buffer)
+	
 	return array
 }
 

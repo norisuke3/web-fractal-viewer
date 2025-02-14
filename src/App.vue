@@ -1,5 +1,19 @@
 <script setup>
 import { onMounted, ref } from 'vue';
+import './wasm/wasm_exec.js';
+
+let wasmInstance = null;
+
+// WebAssemblyの初期化
+async function initWasm() {
+  const go = new window.Go();
+  const result = await WebAssembly.instantiateStreaming(
+    fetch('/src/wasm/mandelbrot.wasm'),
+    go.importObject
+  );
+  go.run(result.instance);
+  wasmInstance = result.instance;
+}
 
 const canvasRef = ref(null);
 const offscreenCanvasRef = ref(null);
@@ -14,43 +28,8 @@ function calculateMaxIterations() {
 
 // マンデルブロー集合の反復計算
 function calculateMandelbrotIterations(width, height, viewPort, maxIterations) {
-  const imageData = new ImageData(width, height);
-
-  for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
-      // キャンバス座標を現在のビューポートにマッピング
-      const initialA = viewPort.xMin + (x / width) * (viewPort.xMax - viewPort.xMin);
-      const initialB = viewPort.yMin + (y / height) * (viewPort.yMax - viewPort.yMin);
-
-      let a = initialA;
-      let b = initialB;
-      const ca = initialA;
-      const cb = initialB;
-      let n = 0;
-
-      for (n = 0; n < maxIterations; n++) {
-        const aa = a * a - b * b;
-        const bb = 2 * a * b;
-
-        a = aa + ca;
-        b = bb + cb;
-
-        if (a * a + b * b > 4) break;
-      }
-
-      // 反復回数に基づいてピクセルに色を設定
-      const pixelIndex = (y * width + x) * 4;
-      const hue = n === maxIterations ? 0 : n % 360;
-      const [r, g, bl] = hslToRgb(hue / 360, 1, n === maxIterations ? 0 : 0.5);
-
-      imageData.data[pixelIndex] = r;
-      imageData.data[pixelIndex + 1] = g;
-      imageData.data[pixelIndex + 2] = bl;
-      imageData.data[pixelIndex + 3] = 255;
-    }
-  }
-
-  return imageData;
+  const array = calculateMandelbrotIterationsWasm(width, height, viewPort, maxIterations);
+  return new ImageData(new Uint8ClampedArray(array.buffer), width, height);
 }
 
 // 選択範囲の状態
@@ -198,7 +177,10 @@ function hslToRgb(h, s, l) {
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // WebAssemblyの初期化
+  await initWasm();
+  
   // オフスクリーンキャンバスの初期化
   offscreenCanvasRef.value = document.createElement('canvas');
   offscreenCanvasRef.value.width = width;
